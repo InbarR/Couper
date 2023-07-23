@@ -186,7 +186,7 @@ namespace Couper
 
                 return field.Trim();
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 Log($"Failed to parse {name} - {ex.Message}");
                 return "";
@@ -571,10 +571,15 @@ namespace Couper
             }
         }
 
-        private static DateTime ParseDate(string date)
+        private DateTime ParseDate(string date)
         {
             try
             {
+                if (date.Contains("עד הודעה חדשה"))
+                {
+                    return DateTime.MaxValue;
+                }
+
                 date = date.Replace(".", "/");
 
                 if (DateTime.TryParseExact(date, DateFormat, CultureInfo.CurrentCulture, DateTimeStyles.None, out var result))
@@ -592,11 +597,13 @@ namespace Couper
                     return result;
                 }
 
+
                 return DateTime.Parse(date);
             }
             catch
             {
-                throw new Exception("Failed to parse date - " + date);
+                Log("Failed to parse date - " + date);
+                return DateTime.MaxValue;
             }
         }
 
