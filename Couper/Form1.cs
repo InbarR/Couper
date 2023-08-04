@@ -597,7 +597,6 @@ namespace Couper
                     return result;
                 }
 
-
                 return DateTime.Parse(date);
             }
             catch
@@ -932,7 +931,7 @@ namespace Couper
                     .Where(i => !i.Used)
                     .Sum(i => Convert.ToInt32(i.Amount));
 
-                sumElem.Value = $"{Sum}: {sum}";
+                sumElem.Value = $"{Sum}: {sum}\nUpdated: {DateTime.Now}";
 
                 _app.UpdatePageContent(doc.ToString());
 
