@@ -37,7 +37,6 @@ namespace Couper
         private const string TitleCode2 = "לרכישה";
         private const string TitleAmount = "סכום ההזמנה";
         private const string TitleAmount2 = "החיוב בסיבוס שלך";
-        private const string TitleExpires = "תוקף";
         private const string TitleLocation = "סניף";
         private const string TitleLocation2 = "קיבלנו את הזמנת השובר שלך";
         private const string TitleDate = "תאריך";
@@ -52,6 +51,7 @@ namespace Couper
         private const string PageName = "Couper";
         private const string SectionName = "shopping";
         private const string Sum = "Sum";
+        private const string LastUpdate = "Last Update";
         private const string DateFormat = "dd/MM/yyyy";
 
         public Form1()
@@ -120,20 +120,7 @@ namespace Couper
                 return;
             }
 
-            if (msg.Expires < DateTime.Now || msg.Expires - DateTime.Now < TimeSpan.FromDays(3))
-            {
-                e.Item.ForeColor = Color.DarkRed;
-                return;
-            }
-
-            if (msg.Expires - DateTime.Now < TimeSpan.FromDays(14))
-            {
-                e.Item.ForeColor = Color.OrangeRed;
-                return;
-            }
-
             e.Item.ForeColor = Color.DarkBlue;
-
         }
 
         private void OnCopy()
@@ -401,6 +388,11 @@ namespace Couper
             return string.Join(" ", Enumerable.Range(0, number.Length / 4).Select(i => number.Substring(i * 4, 4)));
         }
 
+        static Dictionary<string, string> pairs = new Dictionary<string, string>
+        {
+          
+        };
+
         private Details ParseBody(string body, string time)
         {
             if (body.Contains(TenBis))
@@ -416,7 +408,6 @@ namespace Couper
                 {
                     Number = SplitNumber(GetFieldTenBis(lines, "מספר ברקוד", last: false)),
                     Amount = Convert.ToInt32(GetFieldTenBis(lines, "₪").Split('.')[0]),
-                    Expires = ParseDate(GetFieldTenBis(lines, "השובר ניתן למימוש עד לתאריך") ?? time),
                     Location = GetFieldTenBis(lines, "הזמנתך מ"),
                     Date = ParseDate((GetField(body, "התקבלה בתאריך") ?? time).Split(' ')[0]),
                     Link = GetFieldTenBis(lines, "voucher-image", true).Replace("<", "").Replace(">", ""),
@@ -424,16 +415,31 @@ namespace Couper
                 };
             }
 
-            return new Details
+            var details = new Details
             {
                 Number = SplitNumber(GetField(body, TitleCode + ":", TitleCode2)),
                 Amount = Convert.ToInt32(GetField(body, TitleAmount + ":", TitleAmount2 + ":").Split(' ')[0].Replace("₪", "").Split('.')[0]),
-                Expires = ParseDate(GetField(body, TitleExpires + " ") ?? time),
                 Location = GetField(body, TitleLocation + ":", TitleLocation2),
                 Date = ParseDate(GetField(body, TitleDate + ":") ?? time),
                 Link = GetField(body, TitleLink).Replace("<", "").Replace(">", ""),
                 Source = Sodexo
             };
+
+            if (!details.Link.StartsWith("http"))
+            {
+                if (pairs.ContainsKey(details.Number))
+                {
+                    details.Link = pairs[details.Number];
+                    details.Location = "[Fixed] " + details.Location;
+                }
+                else
+                {
+                    details.Location = "[Broken] " + details.Link;
+                    details.Link = null;
+                }
+            }
+
+            return details;
         }
 
         private async void Application_AdvancedSearchComplete(Search search, int days)
@@ -571,16 +577,16 @@ namespace Couper
             }
         }
 
-        private DateTime ParseDate(string date)
+        private static DateTime ParseDate(string date)
         {
             try
             {
-                if (date.Contains("עד הודעה חדשה"))
+                date = date.Replace(".", "/");
+
+                if (date == "עד הודעה חדשה/")
                 {
                     return DateTime.MaxValue;
                 }
-
-                date = date.Replace(".", "/");
 
                 if (DateTime.TryParseExact(date, DateFormat, CultureInfo.CurrentCulture, DateTimeStyles.None, out var result))
                 {
@@ -601,8 +607,7 @@ namespace Couper
             }
             catch
             {
-                Log("Failed to parse date - " + date);
-                return DateTime.MaxValue;
+                throw new Exception("Failed to parse date - " + date);
             }
         }
 
@@ -740,9 +745,8 @@ namespace Couper
             {
                 Amount = amount,
                 Number = cells[2].Item1.Item1,
-                Expires = ParseDate(cells[3].Item1.Item1),
-                Location = cells[4].Item1.Item1,
-                Date = ParseDate(cells[5].Item1.Item1),
+                Location = cells[3].Item1.Item1,
+                Date = ParseDate(cells[4].Item1.Item1),
                 Link = cells[2].Item1.Item2,
                 Used = cells.Any(c => c.Item2)
             };
@@ -907,7 +911,6 @@ namespace Couper
                         BuildCell(ns, "", true, detail.Used),
                         BuildCell(ns, detail.Amount.ToString()),
                         BuildCell(ns, detail.Number, link: detail.Link),
-                        BuildCell(ns, detail.Expires.ToString(DateFormat)),
                         BuildCell(ns, detail.Location),
                         BuildCell(ns, detail.Date.ToString(DateFormat))
                         ));
@@ -931,7 +934,10 @@ namespace Couper
                     .Where(i => !i.Used)
                     .Sum(i => Convert.ToInt32(i.Amount));
 
-                sumElem.Value = $"{Sum}: {sum}\nUpdated: {DateTime.Now}";
+                sumElem.Value = $"{Sum}: {sum}";
+
+                var updatedElem = outline.Descendants(ns + "T").Where(e => e.Value.Contains(LastUpdate)).First();
+                updatedElem.Value = $"{LastUpdate}: {DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss")}";
 
                 _app.UpdatePageContent(doc.ToString());
 
@@ -1009,7 +1015,7 @@ namespace Couper
 
             var columns = new List<XElement>();
 
-            for (int i = 0; i < 6; ++i)
+            for (int i = 0; i < 5; ++i)
             {
                 columns.Add(new XElement(ns + "Column",
                   new XAttribute("index", $"{i}"),
@@ -1020,7 +1026,6 @@ namespace Couper
                 BuildCell(ns, ""),
                 BuildCell(ns, TitleAmount),
                 BuildCell(ns, TitleCode),
-                BuildCell(ns, TitleExpires),
                 BuildCell(ns, TitleLocation),
                 BuildCell(ns, TitleDate));
 
@@ -1033,10 +1038,16 @@ namespace Couper
 
             var sum = new XElement(ns + "OE",
                 new XElement(ns + "T",
-                new XCData($"{Sum}: 0\n\n")));
+                new XCData($"{Sum}: 0\n")));
+
+
+            var updated = new XElement(ns + "OE",
+                new XElement(ns + "T",
+                    new XCData($"{LastUpdate}: [New] {DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss")}\n\n")));
 
             outline.Add(new XElement(ns + "OEChildren",
                         sum,
+                        updated,
                         new XElement(ns + "OE",
                             new XElement(ns + "T",
                                 new XCData($""))),
@@ -1151,11 +1162,9 @@ namespace Couper
         public int Amount { get; set; }
         [OLVColumn(Hyperlink = true)]
         public string Number { get; set; }
-        [OLVColumn(AspectToStringFormat = "{0:d}")]
-        public DateTime Expires { get; set; }
         public string Location { get; set; }
         public bool Used { get; set; }
-        public string Link;
+        public string Link { get; set; }
         public string Source { get; set; }
 
         public override bool Equals(object obj)
