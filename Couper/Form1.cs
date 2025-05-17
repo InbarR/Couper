@@ -24,6 +24,7 @@ namespace Couper
     public partial class Form1 : Form
     {
         private string _pageId;
+        private readonly bool _autoMode;
         private string _usedFile;
         private Details[] _details;
         private bool _allSelected;
@@ -54,10 +55,11 @@ namespace Couper
         private const string LastUpdate = "Last Update";
         private const string DateFormat = "dd/MM/yyyy";
 
-        public Form1()
+        public Form1(bool autoMode)
         {
             InitializeComponent();
 
+            _autoMode = autoMode;
             _usedFile = Path.Combine(System.Windows.Forms.Application.LocalUserAppDataPath, "used.txt");
             _settingsFile = Path.Combine(System.Windows.Forms.Application.LocalUserAppDataPath, "settings.ini");
         }
@@ -93,6 +95,12 @@ namespace Couper
                 {
                     await Task.Delay(1000);
                     MessageBox.Show(this, MailMessage() + "\n\n" + SyncMessage(), "Couper", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+
+                if (_autoMode)
+                {
+                    Log("Running in auto mode");
+                    btnGo.PerformClick();
                 }
             }
             catch (Exception ex)
@@ -390,7 +398,7 @@ namespace Couper
 
         static Dictionary<string, string> pairs = new Dictionary<string, string>
         {
-          
+
         };
 
         private Details ParseBody(string body, string time)
@@ -512,6 +520,15 @@ namespace Couper
 
                 EnableButton(btnGo, true);
                 SetProg(false);
+
+                if (_autoMode)
+                {
+                    Log("Waiting before exit..");
+                    await Task.Delay(TimeSpan.FromSeconds(20));
+
+                    Log("Done waiting");
+                    System.Windows.Forms.Application.Exit();
+                }
             }
         }
 
@@ -832,6 +849,7 @@ namespace Couper
                 var ns = mainDoc.Root.Name.Namespace;
 
                 var notebook = mainDoc.Descendants(ns + "Notebook").Where(n => n.Attribute("name").Value == _settings.Notebook).FirstOrDefault();
+              
                 if (notebook == null)
                 {
                     throw new Exception("Failed to find notebook " + _settings.Notebook);
