@@ -1,23 +1,23 @@
-﻿using Microsoft.Office.Interop.Outlook;
+﻿using BrightIdeasSoftware;
+using Microsoft.Office.Interop.OneNote;
+using Microsoft.Office.Interop.Outlook;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Xml.Linq;
+using System.Xml.Serialization;
+using Action = System.Action;
 using Application = Microsoft.Office.Interop.Outlook.Application;
 using Exception = System.Exception;
-using Action = System.Action;
 using Folder = Microsoft.Office.Interop.Outlook.Folder;
-using Microsoft.Office.Interop.OneNote;
-using System.Xml.Linq;
-using System.IO;
-using System.Text;
-using System.Xml.Serialization;
-using BrightIdeasSoftware;
-using System.Runtime.InteropServices;
 
 namespace Couper
 {
@@ -403,51 +403,61 @@ namespace Couper
 
         private Details ParseBody(string body, string time)
         {
-            if (body.Contains(TenBis))
+            try
             {
-                var lines = body
-                        .Replace("\r", "")
-                        .Replace("\t", "")
-                        .Split(new[] { "\n" }, StringSplitOptions.RemoveEmptyEntries)
-                        .Where(i => i != " ")
-                        .ToArray();
-
-                return new Details
+                if (body.Contains(TenBis))
                 {
-                    Number = SplitNumber(GetFieldTenBis(lines, "מספר ברקוד", last: false)),
-                    Amount = Convert.ToInt32(GetFieldTenBis(lines, "₪").Split('.')[0]),
-                    Location = GetFieldTenBis(lines, "הזמנתך מ"),
-                    Date = ParseDate((GetField(body, "התקבלה בתאריך") ?? time).Split(' ')[0]),
-                    Link = GetFieldTenBis(lines, "voucher-image", true).Replace("<", "").Replace(">", ""),
-                    Source = TenBis
+                    var lines = body
+                            .Replace("\r", "")
+                            .Replace("\t", "")
+                            .Split(new[] { "\n" }, StringSplitOptions.RemoveEmptyEntries)
+                            .Where(i => i != " ")
+                            .ToArray();
+
+                    return new Details
+                    {
+                        Number = SplitNumber(GetFieldTenBis(lines, "מספר ברקוד", last: false)),
+                        Amount = Convert.ToInt32(GetFieldTenBis(lines, "₪").Split('.')[0]),
+                        Location = GetFieldTenBis(lines, "הזמנתך מ"),
+                        Date = ParseDate((GetField(body, "התקבלה בתאריך") ?? time).Split(' ')[0]),
+                        Link = GetFieldTenBis(lines, "voucher-image", true).Replace("<", "").Replace(">", ""),
+                        Source = TenBis
+                    };
+                }
+
+                var num = GetField(body, TitleAmount + ":", TitleAmount2 + ":");
+
+                var details = new Details
+                {
+                    Number = SplitNumber(GetField(body, TitleCode + ":", TitleCode2)),
+                    Amount = num == null ? 0 : Convert.ToInt32(num.Split(' ')[0].Replace("₪", "").Split('.')[0]),
+                    Location = GetField(body, TitleLocation + ":", TitleLocation2),
+                    Date = ParseDate(GetField(body, TitleDate + ":") ?? time),
+                    Link = GetField(body, TitleLink).Replace("<", "").Replace(">", ""),
+                    Source = Sodexo
                 };
-            }
-
-            var details = new Details
-            {
-                Number = SplitNumber(GetField(body, TitleCode + ":", TitleCode2)),
-                Amount = Convert.ToInt32(GetField(body, TitleAmount + ":", TitleAmount2 + ":").Split(' ')[0].Replace("₪", "").Split('.')[0]),
-                Location = GetField(body, TitleLocation + ":", TitleLocation2),
-                Date = ParseDate(GetField(body, TitleDate + ":") ?? time),
-                Link = GetField(body, TitleLink).Replace("<", "").Replace(">", ""),
-                Source = Sodexo
-            };
-
-            if (!details.Link.StartsWith("http"))
-            {
-                if (pairs.ContainsKey(details.Number))
+                
+                if (!details.Link.StartsWith("http"))
                 {
-                    details.Link = pairs[details.Number];
-                    details.Location = "[Fixed] " + details.Location;
+                    if (pairs.ContainsKey(details.Number))
+                    {
+                        details.Link = pairs[details.Number];
+                        details.Location = "[Fixed] " + details.Location;
+                    }
+                    else
+                    {
+                        details.Location = "[Broken] " + details.Link;
+                        details.Link = null;
+                    }
                 }
-                else
-                {
-                    details.Location = "[Broken] " + details.Link;
-                    details.Link = null;
-                }
-            }
 
-            return details;
+                return details;
+            }
+            catch (Exception ex)
+            {
+                Log($"Failed to parse body for - {body}. {ex.Message}", true);
+                return null;
+            }
         }
 
         private async void Application_AdvancedSearchComplete(Search search, int days)
@@ -487,6 +497,7 @@ namespace Couper
 
                 var details = items
                    .Select(i => ParseBody(i.Body, i.ReceivedTime.ToString(DateFormat)))
+                   .Where(i => i != null)
                    .Distinct()
                    .OrderBy(i => i.Date)
                    .ThenByDescending(i => Convert.ToInt32(i.Amount))
@@ -598,6 +609,11 @@ namespace Couper
         {
             try
             {
+                if (date == null)
+                {
+                    return DateTime.MinValue;
+                }
+
                 date = date.Replace(".", "/");
 
                 if (date == "עד הודעה חדשה/")
@@ -849,7 +865,7 @@ namespace Couper
                 var ns = mainDoc.Root.Name.Namespace;
 
                 var notebook = mainDoc.Descendants(ns + "Notebook").Where(n => n.Attribute("name").Value == _settings.Notebook).FirstOrDefault();
-              
+
                 if (notebook == null)
                 {
                     throw new Exception("Failed to find notebook " + _settings.Notebook);
